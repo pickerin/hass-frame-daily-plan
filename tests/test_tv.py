@@ -50,3 +50,23 @@ def test_errors_are_wrapped(monkeypatch):
         pass
     else:
         raise AssertionError("expected FrameTVError")
+
+
+def test_open_skips_stray_d2d_events(monkeypatch):
+    frames = iter([("d2d_service_message", {}), ("d2d_service_message", {}), ("ms.channel.ready", {})])
+    monkeypatch.setattr(tv.SamsungTVWSConnection, "open", lambda self: None)
+    art = tv._Art(host="h", port=8002, token="t", name="n", timeout=1)
+    monkeypatch.setattr(art, "_recv_frame", lambda: next(frames))
+    art.connection = "ws"
+    assert art.open() == "ws"
+
+
+def test_open_fails_on_unexpected_event(monkeypatch):
+    import pytest
+
+    monkeypatch.setattr(tv.SamsungTVWSConnection, "open", lambda self: None)
+    art = tv._Art(host="h", port=8002, token="t", name="n", timeout=1)
+    monkeypatch.setattr(art, "_recv_frame", lambda: ("ms.channel.unauthorized", {}))
+    monkeypatch.setattr(art, "close", lambda: None)
+    with pytest.raises(tv.exceptions.ConnectionFailure):
+        art.open()

@@ -10,8 +10,10 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from samsungtvws import SamsungTVWS
+from samsungtvws import SamsungTVWS, exceptions
 from samsungtvws.art import SamsungTVArt
+from samsungtvws.connection import SamsungTVWSConnection
+from samsungtvws.event import D2D_SERVICE_MESSAGE_EVENT, MS_CHANNEL_READY_EVENT
 
 _LOGGER = logging.getLogger(__name__)
 PORT = 8002
@@ -56,6 +58,23 @@ def new_state() -> dict[str, Any]:
     return {"plan_ids": [], "restore_id": None, "slideshow": None}
 
 
+class _Art(SamsungTVArt):
+    """SamsungTVArt whose open() tolerates queued art events before the ready ack."""
+
+    def open(self):  # noqa: ANN201
+        SamsungTVWSConnection.open(self)
+        # ponytail: while the TV switches modes it pushes d2d events to a fresh
+        # client before ms.channel.ready; the library treats that as a failure
+        for _ in range(10):
+            event, frame = self._recv_frame()
+            if event == MS_CHANNEL_READY_EVENT:
+                return self.connection
+            if event != D2D_SERVICE_MESSAGE_EVENT:
+                break
+        self.close()
+        raise exceptions.ConnectionFailure(frame)
+
+
 class FrameTV:
     """One Frame, one paired client."""
 
@@ -66,7 +85,7 @@ class FrameTV:
         self.timeout = timeout
 
     def _art(self) -> SamsungTVArt:
-        art = SamsungTVArt(host=self.host, port=PORT, token=self.token, name=self.name, timeout=self.timeout)
+        art = _Art(host=self.host, port=PORT, token=self.token, name=self.name, timeout=self.timeout)
         try:
             art.open()
         except Exception as err:  # noqa: BLE001

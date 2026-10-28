@@ -1,7 +1,7 @@
 # Frame Daily Plan for Home Assistant
 
 [![HA Version](https://img.shields.io/badge/HA-2026.10.0+-blue.svg)](https://www.home-assistant.io/)
-[![Version](https://img.shields.io/badge/version-0.1.0-green.svg)](https://github.com/pickerin/hass-frame-daily-plan/releases)
+[![Version](https://img.shields.io/badge/version-0.1.1-green.svg)](https://github.com/pickerin/hass-frame-daily-plan/releases)
 
 Shows the family's day on a **Samsung The Frame** in Art Mode: today's and tomorrow's events, to-dos, the weather with a "what to wear" hint, and a month calendar. Everything comes from entities you already have in Home Assistant (calendars, to-do lists, a weather entity). When you're done, the artwork and the TV's own slideshow come back exactly as they were.
 

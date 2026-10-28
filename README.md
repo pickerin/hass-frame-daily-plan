@@ -54,10 +54,12 @@ If the TV is in TV mode when the plan is shown, the plan is queued and appears w
 
 ## Example automations
 
-Weekday mornings, 05:00 to 07:30:
+Weekday mornings, plan at 05:00, artwork back at 07:30:
 
 ```yaml
-alias: Frame - morning plan
+alias: Frame TV - Daily plan (weekdays 05:00-07:30)
+description: Show the plan at 05:00, bring the artwork and slideshow back at 07:30.
+mode: single
 triggers:
   - trigger: time
     at: "05:00:00"
@@ -70,28 +72,40 @@ conditions:
     weekday: [mon, tue, wed, thu, fri]
 actions:
   - choose:
-      - conditions: "{{ trigger.id == 'show' }}"
+      - conditions:
+          - condition: trigger
+            id: show
         sequence:
           - action: frame_daily_plan.show_plan
-      - conditions: "{{ trigger.id == 'restore' }}"
+      - conditions:
+          - condition: trigger
+            id: restore
         sequence:
           - action: frame_daily_plan.restore_artwork
 ```
 
-Back to Art Mode when the Apple TV on the Frame goes to sleep (otherwise a Frame hunts for the lost HDMI signal and eventually turns off):
+Back to Art Mode when the Apple TV on the Frame goes to sleep. Without this a Frame hunts for the lost HDMI signal, shows "Check Device Power", and never reaches Art Mode (so it never sleeps either):
 
 ```yaml
-alias: Frame - Art Mode when Apple TV sleeps
+alias: Frame TV - Art Mode when Apple TV sleeps
+description: Apple TV asleep for 15 s while the Frame is on -> Art Mode (idempotent; never toggles).
+mode: single
 triggers:
   - trigger: state
-    entity_id: media_player.apple_tv
+    entity_id: media_player.appletv_living_room
     to: "off"
     for: "00:00:15"
+conditions:
+  - condition: state
+    entity_id: switch.frame_tv_art_mode
+    state: "off"
 actions:
   - action: switch.turn_on
     target:
       entity_id: switch.frame_tv_art_mode
 ```
+
+The switch is unavailable while the TV is fully off (it is not reachable then), so the condition also keeps the automation quiet in that case.
 
 ## Notes on The Frame
 

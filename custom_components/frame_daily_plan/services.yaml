@@ -1,0 +1,12 @@
+show_plan:
+  fields:
+    device_id:
+      selector:
+        device:
+          integration: frame_daily_plan
+restore_artwork:
+  fields:
+    device_id:
+      selector:
+        device:
+          integration: frame_daily_plan

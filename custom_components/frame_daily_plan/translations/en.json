@@ -1,0 +1,97 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to The Frame",
+        "description": "The TV must be on (Art Mode counts) and on your network.",
+        "data": {
+          "host": "IP address"
+        }
+      },
+      "pair_failed": {
+        "title": "Pairing failed",
+        "description": "The TV did not allow the connection. Make sure it is on, press Allow on the prompt, and try again. If you pressed Deny once, remove \"Frame Daily Plan\" under Settings > Connection > External Device Manager > Device Connection Manager > Device List on the TV."
+      }
+    },
+    "progress": {
+      "pair": "Press **Allow** on the TV when it asks about \"Frame Daily Plan\" (you have two minutes)."
+    },
+    "error": {
+      "cannot_connect": "Cannot reach a Samsung TV at this address",
+      "not_a_frame": "This Samsung TV has no Art Mode"
+    },
+    "abort": {
+      "already_configured": "This TV is already configured"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "What goes on the plan",
+        "data": {
+          "calendars": "Calendars (events for today and tomorrow)",
+          "todo_lists": "To-do lists",
+          "weather_entity": "Weather",
+          "clock": "Time format",
+          "week_start": "Week starts on"
+        }
+      }
+    }
+  },
+  "entity": {
+    "switch": {
+      "art_mode": {
+        "name": "Art Mode"
+      }
+    },
+    "button": {
+      "show_plan": {
+        "name": "Show plan"
+      },
+      "restore_artwork": {
+        "name": "Restore artwork"
+      }
+    },
+    "image": {
+      "plan": {
+        "name": "Daily plan"
+      }
+    }
+  },
+  "selector": {
+    "clock": {
+      "options": {
+        "12": "12-hour (am/pm)",
+        "24": "24-hour"
+      }
+    },
+    "week_start": {
+      "options": {
+        "monday": "Monday",
+        "sunday": "Sunday"
+      }
+    }
+  },
+  "services": {
+    "show_plan": {
+      "name": "Show plan",
+      "description": "Render today's plan and show it in Art Mode. Remembers the current artwork and pauses the TV's slideshow.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "Which Frame (optional if only one is configured)."
+        }
+      }
+    },
+    "restore_artwork": {
+      "name": "Restore artwork",
+      "description": "Bring the previous artwork and slideshow back and delete the plan image from the TV.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "Which Frame (optional if only one is configured)."
+        }
+      }
+    }
+  }
+}

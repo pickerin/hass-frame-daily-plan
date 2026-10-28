@@ -56,8 +56,7 @@ class FrameConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def async_step_pair(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         if self._pair_task is None:
-            self._pair_task = self.hass.async_create_task(
-                self.hass.async_add_executor_job(tv.pair, self._host, CLIENT_NAME, PAIR_TIMEOUT))
+            self._pair_task = self.hass.async_create_task(self._async_pair())
         if not self._pair_task.done():
             return self.async_show_progress(step_id="pair", progress_action="pair", progress_task=self._pair_task)
         try:
@@ -67,6 +66,9 @@ class FrameConfigFlow(ConfigFlow, domain=DOMAIN):
             self._pair_task = None
             return self.async_show_progress_done(next_step_id="pair_failed")
         return self.async_show_progress_done(next_step_id="finish")
+
+    async def _async_pair(self) -> str:
+        return await self.hass.async_add_executor_job(tv.pair, self._host, CLIENT_NAME, PAIR_TIMEOUT)
 
     async def async_step_pair_failed(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         if user_input is not None:

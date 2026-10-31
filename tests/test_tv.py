@@ -1,3 +1,8 @@
+import json
+import threading
+
+import pytest
+
 import tv
 
 
@@ -39,34 +44,49 @@ def test_second_show_keeps_original_restore_id(monkeypatch):
 
 
 def test_errors_are_wrapped(monkeypatch):
-    class Down:
-        def __init__(self, **kw): pass
+    class Down(FakeArt):
         def open(self): raise OSError("down")
-    monkeypatch.setattr(tv, "SamsungTVArt", Down)
     frame = tv.FrameTV("h", "t", "n", 1)
-    try:
+    monkeypatch.setattr(frame, "_art", lambda: Down())
+    with pytest.raises(tv.FrameTVError, match="cannot connect"):
         frame.art_mode()
-    except tv.FrameTVError:
-        pass
-    else:
-        raise AssertionError("expected FrameTVError")
 
 
-def test_open_skips_stray_d2d_events(monkeypatch):
-    frames = iter([("d2d_service_message", {}), ("d2d_service_message", {}), ("ms.channel.ready", {})])
-    monkeypatch.setattr(tv.SamsungTVWSConnection, "open", lambda self: None)
+def test_watchdog_aborts_hung_call(monkeypatch):
+    class HungWS:
+        def __init__(self): self.aborted = threading.Event()
+        def abort(self): self.aborted.set()
+
+    class Hung(FakeArt):
+        connection = HungWS()
+        def get_artmode(self):
+            assert self.connection.aborted.wait(5), "watchdog never fired"
+            raise OSError("socket closed")
+
+    frame = tv.FrameTV("h", "t", "n", 1)
+    frame.watchdog = 0.05
+    monkeypatch.setattr(frame, "_art", lambda: Hung())
+    with pytest.raises(tv.FrameTVError, match="did not answer within"):
+        frame.art_mode()
+
+
+class FakeWS:
+    def __init__(self, events): self.events, self.closed = iter(events), False
+    def recv(self): return json.dumps({"event": next(self.events), "data": {}})
+    def close(self): self.closed = True
+
+
+def test_open_tolerates_startup_noise(monkeypatch):
+    ws = FakeWS(["ms.channel.connect", "ms.channel.clientDisconnect", "d2d_service_message", "ms.channel.ready"])
+    monkeypatch.setattr(tv.websocket, "create_connection", lambda *a, **k: ws)
     art = tv._Art(host="h", port=8002, token="t", name="n", timeout=1)
-    monkeypatch.setattr(art, "_recv_frame", lambda: next(frames))
-    art.connection = "ws"
-    assert art.open() == "ws"
+    assert art.open() is ws
 
 
 def test_open_fails_on_unexpected_event(monkeypatch):
-    import pytest
-
-    monkeypatch.setattr(tv.SamsungTVWSConnection, "open", lambda self: None)
+    ws = FakeWS(["ms.channel.connect", "ms.channel.unauthorized"])
+    monkeypatch.setattr(tv.websocket, "create_connection", lambda *a, **k: ws)
     art = tv._Art(host="h", port=8002, token="t", name="n", timeout=1)
-    monkeypatch.setattr(art, "_recv_frame", lambda: ("ms.channel.unauthorized", {}))
-    monkeypatch.setattr(art, "close", lambda: None)
-    with pytest.raises(tv.exceptions.ConnectionFailure):
+    with pytest.raises(tv.exceptions.UnauthorizedError):
         art.open()
+    assert ws.closed and art.connection is None

@@ -43,6 +43,11 @@ class FrameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             art_mode = await self.hass.async_add_executor_job(self.tv.art_mode)
         except FrameTVError as err:
             raise UpdateFailed(str(err)) from err
+        if self.state.get("restore_pending"):  # a scheduled restore failed while the TV was unreachable
+            try:
+                await self.async_restore_artwork()
+            except HomeAssistantError as err:
+                _LOGGER.warning("Restore retry failed, will try again next poll: %s", err)
         return {"art_mode": art_mode}
 
     async def async_set_art_mode(self, on: bool) -> None:
@@ -56,6 +61,7 @@ class FrameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         jpeg = await plan.async_render(self.hass, dict(self.entry.options))
         self.last_plan, self.last_plan_at = jpeg, dt_util.utcnow()
         self.async_update_listeners()
+        self.state["restore_pending"] = False
         try:
             self.state = await self.hass.async_add_executor_job(self.tv.show_image, jpeg, self.state)
         except FrameTVError as err:
@@ -65,8 +71,10 @@ class FrameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         _LOGGER.info("Plan shown as %s", self.state["plan_ids"][-1:] or "?")
 
     async def async_restore_artwork(self) -> None:
+        self.state["restore_pending"] = True
         try:
             self.state = await self.hass.async_add_executor_job(self.tv.restore, self.state)
+            self.state["restore_pending"] = False
         except FrameTVError as err:
             raise HomeAssistantError(f"Frame TV: {err}") from err
         finally:

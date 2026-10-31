@@ -8,12 +8,22 @@ one timeout and never a stale socket.
 from __future__ import annotations
 
 import logging
+import ssl
+import threading
 from typing import Any
 
 from samsungtvws import SamsungTVWS, exceptions
 from samsungtvws.art import SamsungTVArt
-from samsungtvws.connection import SamsungTVWSConnection
-from samsungtvws.event import D2D_SERVICE_MESSAGE_EVENT, MS_CHANNEL_READY_EVENT
+from samsungtvws.event import (
+    D2D_SERVICE_MESSAGE_EVENT,
+    IGNORE_EVENTS_AT_STARTUP,
+    MS_CHANNEL_CLIENT_CONNECT_EVENT,
+    MS_CHANNEL_CLIENT_DISCONNECT_EVENT,
+    MS_CHANNEL_CONNECT_EVENT,
+    MS_CHANNEL_READY_EVENT,
+    MS_CHANNEL_UNAUTHORIZED,
+)
+import websocket
 
 _LOGGER = logging.getLogger(__name__)
 PORT = 8002
@@ -58,21 +68,38 @@ def new_state() -> dict[str, Any]:
     return {"plan_ids": [], "restore_id": None, "slideshow": None}
 
 
+# Events the TV may push to a fresh client before its ms.channel.ready ack:
+# queued art events while it switches modes, and other clients (such as our own
+# previous, hung connection) coming and going.
+_STARTUP_NOISE = frozenset({D2D_SERVICE_MESSAGE_EVENT, MS_CHANNEL_CLIENT_CONNECT_EVENT,
+                            MS_CHANNEL_CLIENT_DISCONNECT_EVENT, *IGNORE_EVENTS_AT_STARTUP})
+
+
 class _Art(SamsungTVArt):
-    """SamsungTVArt whose open() tolerates queued art events before the ready ack."""
+    """SamsungTVArt with its own handshake: tolerant of startup noise and abortable."""
 
     def open(self):  # noqa: ANN201
-        SamsungTVWSConnection.open(self)
-        # ponytail: while the TV switches modes it pushes d2d events to a fresh
-        # client before ms.channel.ready; the library treats that as a failure
-        for _ in range(10):
-            event, frame = self._recv_frame()
-            if event == MS_CHANNEL_READY_EVENT:
-                return self.connection
-            if event != D2D_SERVICE_MESSAGE_EVENT:
-                break
-        self.close()
-        raise exceptions.ConnectionFailure(frame)
+        if self.connection:
+            return self.connection
+        sslopt = {"cert_reqs": ssl.CERT_NONE} if self._is_ssl_connection() else {}
+        # Stored before the handshake so a watchdog can abort() a stuck recv.
+        self.connection = websocket.create_connection(
+            self._format_websocket_url(self.endpoint), self.timeout, sslopt=sslopt, connection="Connection: Upgrade")
+        try:
+            for _ in range(20):
+                event, frame = self._recv_frame()
+                if event == MS_CHANNEL_READY_EVENT:
+                    return self.connection
+                if event == MS_CHANNEL_CONNECT_EVENT:
+                    self._check_for_token(frame)
+                elif event == MS_CHANNEL_UNAUTHORIZED:
+                    raise exceptions.UnauthorizedError(frame)
+                elif event not in _STARTUP_NOISE:
+                    raise exceptions.ConnectionFailure(frame)
+            raise exceptions.ConnectionFailure("no ms.channel.ready after 20 events")
+        except BaseException:
+            self.close()
+            raise
 
 
 class FrameTV:
@@ -83,24 +110,38 @@ class FrameTV:
         self.token = token
         self.name = name
         self.timeout = timeout
+        # The socket timeout alone does not bound a call: the TV's websocket
+        # pings reset it, and one poll hung for nine hours that way.
+        self.watchdog = timeout * 3
 
     def _art(self) -> SamsungTVArt:
-        art = _Art(host=self.host, port=PORT, token=self.token, name=self.name, timeout=self.timeout)
-        try:
-            art.open()
-        except Exception as err:  # noqa: BLE001
-            raise FrameTVError(f"cannot connect to {self.host}: {err}") from err
-        return art
+        return _Art(host=self.host, port=PORT, token=self.token, name=self.name, timeout=self.timeout)
 
     def _run(self, fn):
         art = self._art()
+        fired = threading.Event()
+
+        def abort() -> None:
+            fired.set()
+            if ws := getattr(art, "connection", None):
+                ws.abort()  # shutdown(2) wakes the blocked recv
+
+        timer = threading.Timer(self.watchdog, abort)
+        timer.start()
         try:
+            try:
+                art.open()
+            except Exception as err:  # noqa: BLE001
+                raise FrameTVError(f"cannot connect to {self.host}: {err}") from err
             return fn(art)
-        except FrameTVError:
-            raise
         except Exception as err:  # noqa: BLE001
+            if fired.is_set():
+                raise FrameTVError(f"{self.host} did not answer within {self.watchdog} s") from err
+            if isinstance(err, FrameTVError):
+                raise
             raise FrameTVError(str(err) or type(err).__name__) from err
         finally:
+            timer.cancel()
             try:
                 art.close()
             except Exception:  # noqa: BLE001

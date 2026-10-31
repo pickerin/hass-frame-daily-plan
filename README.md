@@ -1,7 +1,7 @@
 # Frame Daily Plan for Home Assistant
 
 [![HA Version](https://img.shields.io/badge/HA-2026.10.0+-blue.svg)](https://www.home-assistant.io/)
-[![Version](https://img.shields.io/badge/version-0.1.1-green.svg)](https://github.com/pickerin/hass-frame-daily-plan/releases)
+[![Version](https://img.shields.io/badge/version-0.1.2-green.svg)](https://github.com/pickerin/hass-frame-daily-plan/releases)
 
 Shows the family's day on a **Samsung The Frame** in Art Mode: today's and tomorrow's events, to-dos, the weather with a "what to wear" hint, and a month calendar. Everything comes from entities you already have in Home Assistant (calendars, to-do lists, a weather entity). When you're done, the artwork and the TV's own slideshow come back exactly as they were.
 
@@ -37,7 +37,23 @@ Copy `custom_components/frame_daily_plan/` into your `config/custom_components/`
 2. The TV shows an **Allow this device?** prompt for "Frame Daily Plan". Press **Allow** within two minutes. If you pressed Deny once, remove the device under Settings, Connection, External Device Manager, Device Connection Manager, Device List on the TV, then try again.
 3. Open the integration's **Configure** dialog and pick calendars, to-do lists, a weather entity, time format and week start.
 
-Any calendar entity works: iCloud via the CalDAV integration, Google Calendar, Local Calendar, Holiday.
+## Data sources
+
+The plan is built entirely from Home Assistant entities, chosen in the Configure dialog. The integration fetches nothing from the internet itself, so each source must already be set up as a Home Assistant integration that provides the right kind of entity.
+
+| Section of the plan | Entity domain | Service called at render time | Provided by |
+|---|---|---|---|
+| Today's and tomorrow's events | `calendar.*` (one or more) | `calendar.get_events` | Any calendar integration: [CalDAV](https://www.home-assistant.io/integrations/caldav/) (iCloud, Fastmail, Nextcloud), [Google Calendar](https://www.home-assistant.io/integrations/google/), [Local Calendar](https://www.home-assistant.io/integrations/local_calendar/), [Holiday](https://www.home-assistant.io/integrations/holiday/) |
+| To-dos | `todo.*` (one or more) | `todo.get_items` with status `needs_action` | Any to-do integration: [Local To-do](https://www.home-assistant.io/integrations/local_todo/), [Shopping List](https://www.home-assistant.io/integrations/shopping_list/), [Google Tasks](https://www.home-assistant.io/integrations/google_tasks/), [Todoist](https://www.home-assistant.io/integrations/todoist/), CalDAV task lists |
+| Weather and "what to wear" | `weather.*` (one) | `weather.get_forecasts` with type `daily` | Any weather integration that supports daily forecasts: [Met.no](https://www.home-assistant.io/integrations/met/) (installed by default), [Open-Meteo](https://www.home-assistant.io/integrations/open_meteo/), [NWS](https://www.home-assistant.io/integrations/nws/), [AccuWeather](https://www.home-assistant.io/integrations/accuweather/) |
+
+Dependencies and limits:
+
+- **Calendars**: events are read for a two-day window starting at local midnight. Each configured calendar gets its own colour, in the order selected. For CalDAV and Google, the calendars have to be enabled in that integration first; shared or subscribed calendars only show up if the account you connected can see them.
+- **To-dos**: only items whose status is `needs_action` are listed, so completed items never appear. Lists are shown in the order selected, duplicates across lists are dropped, and due dates are neither shown nor used for sorting.
+- **Weather**: the entity must return a daily forecast; an hourly-only entity gives no weather block. The first forecast entry (today) is used for the high, low, condition and wear hint. Temperatures follow the Home Assistant unit system; the wear hint judges in Celsius internally.
+- All three are optional. Leave a section unconfigured and it is left out of the render.
+
 
 ## Entities and services
 
